@@ -143,9 +143,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Task { @MainActor in self?.updateBar() }
         }
 
-        for (id, snapshot) in SnapshotCache.load() { states[id] = ProviderState(snapshot: snapshot) }
+        if isDemoMode {
+            states = DemoData.states
+            DemoBackdrop.showIfRequested()
+            if let flag = CommandLine.arguments.firstIndex(of: "--export-bar"), flag + 1 < CommandLine.arguments.count {
+                reloadSources()
+                exportBarImages(to: URL(fileURLWithPath: CommandLine.arguments[flag + 1]))
+                NSApp.terminate(nil)
+                return
+            }
+        } else {
+            for (id, snapshot) in SnapshotCache.load() { states[id] = ProviderState(snapshot: snapshot) }
+        }
         reloadSources()
-        setUpLaunchAtLoginOnce()
+        if !isDemoMode { setUpLaunchAtLoginOnce() }
 
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -161,19 +172,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Settings
 
     private var disabled: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: "disabled") ?? []) }
+        get { isDemoMode ? [] : Set(UserDefaults.standard.stringArray(forKey: "disabled") ?? []) }
         set { UserDefaults.standard.set(Array(newValue), forKey: "disabled") }
     }
 
     private var hidden: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: "hiddenInBar") ?? []) }
+        get { isDemoMode ? [] : Set(UserDefaults.standard.stringArray(forKey: "hiddenInBar") ?? []) }
         set { UserDefaults.standard.set(Array(newValue), forKey: "hiddenInBar") }
     }
 
     private var activeSources: [Source] { sources.filter { !disabled.contains($0.id) } }
 
     private func reloadSources() {
-        sources = Accounts.sources()
+        sources = isDemoMode ? DemoData.sources : Accounts.sources()
         let ids = Set(sources.map(\.id))
         states = states.filter { ids.contains($0.key) }
         updateBar()
@@ -187,6 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func tick(force: Bool = false) {
+        guard !isDemoMode else { return }
         for source in activeSources {
             var state = states[source.id] ?? ProviderState()
             if state.inFlight || (!force && Date() < state.nextDue) { continue }
@@ -242,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Menu bar
 
     private var barStyle: String {
-        get { UserDefaults.standard.string(forKey: "barStyle") ?? "number" }
+        get { CommandLine.arguments.contains("--rings") ? "ring" : UserDefaults.standard.string(forKey: "barStyle") ?? "number" }
         set { UserDefaults.standard.set(newValue, forKey: "barStyle") }
     }
 
@@ -301,9 +313,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let dark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        button.image = barImage(for: entries, dark: dark, rings: barStyle == "ring")
+        button.imagePosition = .imageOnly
+    }
+
+    private func barImage(for entries: [Source], dark: Bool, rings: Bool) -> NSImage {
         let fg: NSColor = dark ? .white : .black
         let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        let rings = barStyle == "ring"
         let height: CGFloat = 18, gap: CGFloat = 7
 
         struct Piece { let logo: NSImage; let value: BarValue; let text: NSAttributedString?; let width: CGFloat }
@@ -323,7 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let width = pieces.reduce(0) { $0 + $1.width } + gap * CGFloat(pieces.count - 1)
 
-        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+        return NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
             var x: CGFloat = 0
             for piece in pieces {
                 if let text = piece.text {
@@ -352,8 +368,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             return true
         }
-        button.image = image
-        button.imagePosition = .imageOnly
+    }
+
+    /// `--demo --export-bar <dir>`: write the status item in both styles and appearances at 4× for docs.
+    private func exportBarImages(to dir: URL) {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (name, dark, rings) in [("numbers-dark", true, false), ("rings-dark", true, true),
+                                    ("numbers-light", false, false), ("rings-light", false, true)] {
+            let image = barImage(for: activeSources, dark: dark, rings: rings)
+            let scale: CGFloat = 4
+            guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(image.size.width * scale),
+                                             pixelsHigh: Int(image.size.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
+                                             hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+            else { continue }
+            rep.size = image.size
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            image.draw(in: NSRect(origin: .zero, size: image.size))
+            NSGraphicsContext.restoreGraphicsState()
+            try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(name).png"))
+        }
     }
 
     // MARK: Menu
