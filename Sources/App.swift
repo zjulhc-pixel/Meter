@@ -117,6 +117,8 @@ struct ProviderState {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let refreshInterval: TimeInterval = 180
     private static let staleAfter: TimeInterval = 15 * 60
+    /// Usage turns orange, then red, as it nears the limit.
+    private static let orangeAt: Double = 80, redAt: Double = 95
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -271,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func level(_ percent: Double, normal: NSColor = .labelColor) -> NSColor {
-        percent >= 90 ? .systemRed : percent >= 70 ? .systemOrange : normal
+        percent >= Self.redAt ? .systemRed : percent >= Self.orangeAt ? .systemOrange : normal
     }
 
     private enum BarValue {
@@ -597,7 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func progressImage(_ percent: Double) -> NSImage {
-        let color: NSColor = percent >= 90 ? .systemRed : percent >= 70 ? .systemOrange : .labelColor
+        let color = level(percent)
         return NSImage(size: NSSize(width: 40, height: 5), flipped: false) { rect in
             NSColor.quaternaryLabelColor.setFill()
             NSBezierPath(roundedRect: rect, xRadius: 2.5, yRadius: 2.5).fill()

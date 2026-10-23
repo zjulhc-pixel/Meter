@@ -50,10 +50,10 @@ enum DemoData {
                                              plan: plan, fetchedAt: now))
         }
         return [
-            sources[0].id: snapshot("max", [("5-hour", 42, 2.3), ("Week", 71, 52), ("Sonnet wk", 35, 52)]),
+            sources[0].id: snapshot("max", [("5-hour", 42, 2.3), ("Week", 84, 52), ("Sonnet wk", 35, 52)]),
             sources[1].id: snapshot("plus", [("5-hour", 18, 3.1), ("Week", 54, 97)]),
             sources[2].id: snapshot("pro", [("5-hour", 9, 4.2), ("Week", 23, 121), ("MCP/mo", 4, 400)]),
-            sources[3].id: snapshot(nil, [("5-hour", 93, 0.7), ("Week", 60, 75)]),
+            sources[3].id: snapshot(nil, [("5-hour", 96, 0.7), ("Week", 60, 75)]),
         ]
     }
 }
